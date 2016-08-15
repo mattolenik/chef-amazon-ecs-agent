@@ -16,14 +16,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 include_recipe 'chef-sugar'
 
 package 'apt-transport-https' if ubuntu?
 
 apt_repository 'docker' do
   uri 'https://apt.dockerproject.org/repo'
-  trusted true
-  components ["ubuntu-#{node['lsb']['codename']}", 'main']
+  distribution "ubuntu-#{node[:lsb][:codename]}"
+  components ['main']
+  keyserver node['amazon-ecs-agent']['docker']['apt']['keyserver']
+  key node['amazon-ecs-agent']['docker']['apt']['key']
   only_if { ubuntu? }
 end
 
@@ -35,6 +38,7 @@ end
 
 directory node['amazon-ecs-agent']['data_folder'] do
   mode 0755
+  recursive true
   action :create
 end
 
@@ -47,6 +51,13 @@ docker_installation_package 'default' do
   action :create
 end
 
+# Allow the user to run containers
+group 'docker' do
+  action :modify
+  members node['amazon-ecs-agent']['user']
+  append true
+end
+
 # create the docker service
 docker_service 'default' do
   storage_driver node['amazon-ecs-agent']['storage_driver']
@@ -56,18 +67,30 @@ end
 # pull down the latest image
 docker_image 'amazon/amazon-ecs-agent'
 
+environment_variables = [
+    'ECS_DATADIR=/data',
+    'ECS_LOGFILE=/log/ecs-agent.log',
+    "ECS_LOGLEVEL=#{node['amazon-ecs-agent']['log_level']}",
+    "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}"
+  ] + node['amazon-ecs-agent']['docker_additional_envs']
+
+# use the env file to trigger a redeploy on changes
+file '/etc/default/ecs-agent' do
+  action :create
+  owner 'root'
+  group 'root'
+  mode '0644'
+  content environment_variables.join('\n')
+  notifies :redeploy, 'docker_container[amazon-ecs-agent]'
+end
+
 # start the container and map it to port 8484
 docker_container 'amazon-ecs-agent' do
   repo 'amazon/amazon-ecs-agent'
   port '51678:51678'
-  tag 'latest'
-  env [
-    'ECS_LOGFILE=/log/ecs-agent.log',
-    "ECS_LOGLEVEL=#{node['amazon-ecs-agent']['log_level']}",
-    "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}",
-    "AWS_ACCESS_KEY_ID=#{node['amazon-ecs-agent']['aws_access_key_id']}",
-    "AWS_SECRET_ACCESS_KEY=#{node['amazon-ecs-agent']['aws_secret_access_key']}"
-  ] + node['amazon-ecs-agent']['docker_additional_env']
+  tag node['amazon-ecs-agent']['tag']
+  env environment_variables
+  restart_policy 'always'
   binds [
     "#{node['amazon-ecs-agent']['log_folder']}:/log",
     '/var/run/docker.sock:/var/run/docker.sock',
