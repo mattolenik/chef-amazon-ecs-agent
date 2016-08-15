@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+
+docker run \
+    --name ecs-agent \
+    --restart=always \
+    --volume=/var/run/docker.sock:/var/run/docker.sock \
+    --volume=<%= @log_folder %>:/log \
+    --volume=<%= @data_folder %>:/data \
+    --volume=/sys/fs/cgroup:/sys/fs/cgroup:ro \
+    --volume=/var/run/docker/libcontainerd:/var/lib/libcontainerd:ro \
+    --net=host \
+    --env-file=<%= @env_file %> \
+    amazon/amazon-ecs-agent:<%= @tag %>

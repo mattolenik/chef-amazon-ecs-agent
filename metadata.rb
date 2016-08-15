@@ -8,6 +8,6 @@ version '1.1.0'
 
 supports 'ubuntu'
 
-depends 'docker', '~> 2.2.9'
-depends 'chef-sugar'
 depends 'apt'
+depends 'chef-sugar'
+depends 'docker', '~> 2.9.0'

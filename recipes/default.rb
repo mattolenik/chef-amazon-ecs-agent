@@ -16,14 +16,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
 include_recipe 'chef-sugar'
 
 package 'apt-transport-https' if ubuntu?
 
 apt_repository 'docker' do
   uri 'https://apt.dockerproject.org/repo'
-  trusted true
-  components ["ubuntu-#{node['lsb']['codename']}", 'main']
+  distribution "ubuntu-#{node[:lsb][:codename]}"
+  components ['main']
+  keyserver node['amazon-ecs-agent']['docker']['apt']['keyserver']
+  key node['amazon-ecs-agent']['docker']['apt']['key']
   only_if { ubuntu? }
 end
 
@@ -35,6 +38,7 @@ end
 
 directory node['amazon-ecs-agent']['data_folder'] do
   mode 0755
+  recursive true
   action :create
 end
 
@@ -47,6 +51,13 @@ docker_installation_package 'default' do
   action :create
 end
 
+# Allow the user to run containers
+group 'docker' do
+  action :modify
+  members node['amazon-ecs-agent']['user']
+  append true
+end
+
 # create the docker service
 docker_service 'default' do
   storage_driver node['amazon-ecs-agent']['storage_driver']
@@ -56,21 +67,33 @@ end
 # pull down the latest image
 docker_image 'amazon/amazon-ecs-agent'
 
-# start the container and map it to port 8484
-docker_container 'amazon-ecs-agent' do
-  repo 'amazon/amazon-ecs-agent'
-  port '51678:51678'
-  tag 'latest'
-  env [
+environment_variables = [
+    'ECS_DATADIR=/data',
     'ECS_LOGFILE=/log/ecs-agent.log',
     "ECS_LOGLEVEL=#{node['amazon-ecs-agent']['log_level']}",
-    "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}",
-    "AWS_ACCESS_KEY_ID=#{node['amazon-ecs-agent']['aws_access_key_id']}",
-    "AWS_SECRET_ACCESS_KEY=#{node['amazon-ecs-agent']['aws_secret_access_key']}"
-  ] + node['amazon-ecs-agent']['docker_additional_env']
-  binds [
-    "#{node['amazon-ecs-agent']['log_folder']}:/log",
-    '/var/run/docker.sock:/var/run/docker.sock',
-    "#{node['amazon-ecs-agent']['data_folder']}:/data"
-  ] + node['amazon-ecs-agent']['docker_additional_binds']
+    "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}"
+  ] + node['amazon-ecs-agent']['docker_additional_envs']
+
+# write defaults env file, can be overriden by userdata
+file node['amazon-ecs-agent']['env_file'] do
+  action :create
+  owner 'root'
+  group 'root'
+  mode '0644'
+  content environment_variables.join("\n")
+end
+
+# Note: Not using the docker_container resource here to delay the creation
+# of the container until boot. This allows us to override the value of the
+# ECS_CLUSTER (and other vars) via EC2 user-data.
+template '/var/lib/cloud/scripts/per-boot/run-ecs-agent.sh' do
+  source 'run-ecs-agent.sh.erb'
+  mode 0755
+  variables(
+    data_folder: node['amazon-ecs-agent']['data_folder'],
+    env_file: node['amazon-ecs-agent']['env_file'],
+    log_folder: node['amazon-ecs-agent']['log_folder'],
+    tag: node['amazon-ecs-agent']['tag']
+  )
+  only_if 'test -d /var/lib/cloud/scripts/per-boot'
 end
