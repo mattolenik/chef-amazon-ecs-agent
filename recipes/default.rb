@@ -90,7 +90,7 @@ docker_container 'amazon-ecs-agent' do
   port '51678:51678'
   tag node['amazon-ecs-agent']['tag']
   env environment_variables
-  restart_policy 'always'
+  #restart_policy 'always'
   binds [
     "#{node['amazon-ecs-agent']['log_folder']}:/log",
     '/var/run/docker.sock:/var/run/docker.sock',
