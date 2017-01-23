@@ -60,6 +60,8 @@ end
 
 # create the docker service
 docker_service 'default' do
+  fixed_cidr node['amazon-ecs-agent']['fixed_cidr']
+  bip node['amazon-ecs-agent']['bip']
   storage_driver node['amazon-ecs-agent']['storage_driver']
   action [:create, :start]
 end
