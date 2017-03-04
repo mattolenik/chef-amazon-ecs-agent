@@ -10,4 +10,4 @@ supports 'ubuntu'
 
 depends 'apt'
 depends 'chef-sugar'
-depends 'docker', '~> 2.9.0'
+depends 'docker', '~> 2.15.0'
