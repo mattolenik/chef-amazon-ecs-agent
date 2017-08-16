@@ -21,34 +21,34 @@ include_recipe 'chef-sugar'
 
 package 'apt-transport-https' if ubuntu?
 
-apt_repository 'docker' do
-  uri 'https://apt.dockerproject.org/repo'
-  distribution "ubuntu-#{node[:lsb][:codename]}"
-  components ['main']
-  keyserver node['amazon-ecs-agent']['docker']['apt']['keyserver']
-  key node['amazon-ecs-agent']['docker']['apt']['key']
-  only_if { ubuntu? }
+bash 'install_docker' do
+  code <<-EOH
+    apt-get update
+    apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    add-apt-repository \
+      "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) \
+      stable"
+    apt-get update
+    apt-get install -y docker-ce=#{node['amazon-ecs-agent']['docker']['version']}
+  EOH
 end
 
 # create the default log folder
 directory node['amazon-ecs-agent']['log_folder'] do
-  mode 0755
+  mode 0o0755
   action :create
 end
 
 directory node['amazon-ecs-agent']['data_folder'] do
-  mode 0755
+  mode 0o0755
   recursive true
   action :create
 end
 
 package "linux-image-extra-#{node['kernel']['release']}" do
   only_if { node['amazon-ecs-agent']['storage_driver'] == 'aufs' }
-end
-
-docker_installation_package 'default' do
-  version node['amazon-ecs-agent']['docker']['version']
-  action :create
 end
 
 # Allow the user to run containers
@@ -70,11 +70,11 @@ end
 docker_image 'amazon/amazon-ecs-agent'
 
 environment_variables = [
-    'ECS_DATADIR=/data',
-    'ECS_LOGFILE=/log/ecs-agent.log',
-    "ECS_LOGLEVEL=#{node['amazon-ecs-agent']['log_level']}",
-    "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}"
-  ] + node['amazon-ecs-agent']['docker_additional_envs']
+  'ECS_DATADIR=/data',
+  'ECS_LOGFILE=/log/ecs-agent.log',
+  "ECS_LOGLEVEL=#{node['amazon-ecs-agent']['log_level']}",
+  "ECS_CLUSTER=#{node['amazon-ecs-agent']['cluster']}"
+] + node['amazon-ecs-agent']['docker_additional_envs']
 
 # write defaults env file, can be overriden by userdata
 file node['amazon-ecs-agent']['env_file'] do
@@ -90,7 +90,7 @@ end
 # ECS_CLUSTER (and other vars) via EC2 user-data.
 template '/var/lib/cloud/scripts/per-boot/run-ecs-agent.sh' do
   source 'run-ecs-agent.sh.erb'
-  mode 0755
+  mode 0o0755
   variables(
     data_folder: node['amazon-ecs-agent']['data_folder'],
     env_file: node['amazon-ecs-agent']['env_file'],
